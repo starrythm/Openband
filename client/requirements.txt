@@ -1,0 +1,5 @@
+bleak==3.0.2
+cryptography>=44
+requests>=2.32
+Pillow>=10.1
+winrt-Windows.Devices.Bluetooth.Rfcomm==4!10.0.28000.2705; sys_platform == 'win32'

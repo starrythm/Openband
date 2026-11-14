@@ -1,0 +1,11 @@
+/.state/
+/inputs/
+/build/
+/node_modules/
+/.venv/
+__pycache__/
+*.pyc
+*.apk
+*.dpapi.json
+*.dpapi.json.new
+.env

@@ -1,0 +1,8 @@
+{
+  "name": "openband-tools",
+  "private": true,
+  "dependencies": {
+    "fengari-node-cli": "0.1.0",
+    "playwright-core": "1.58.2"
+  }
+}

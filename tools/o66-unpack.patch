@@ -1,0 +1,43 @@
+diff --git a/Mi8WfBinTool.java b/Mi8WfBinTool.java
+index c632375..02d1e6e 100644
+--- a/Mi8WfBinTool.java
++++ b/Mi8WfBinTool.java
+@@ -2097,7 +2097,7 @@ public class Mi8WfBinTool {
+                 if (!normal.extraProp7.isEmpty()) wf.put("extraProp7Normal", normal.extraProp7);
+                 if (!normal.extraProp8.isEmpty()) wf.put("extraProp8Normal", normal.extraProp8);
+                 if (!normal.extraProp9.isEmpty()) wf.put("extraProp9Normal", normal.extraProp9);
+-                if (!namedFaces || hasAnyAod) {
++                if (faceCount > 1 && (!namedFaces || hasAnyAod)) {
+                     Files.createDirectories(out.resolve("images_aod"));
+                     FaceRead aod = readFace(data, faceHeaderOffset(1, namedFaces), out.resolve("images_aod"), true);
+                     aod.elements = simplifyLegacyElements(aod.elements);
+@@ -2284,7 +2284,13 @@ public class Mi8WfBinTool {
+             for (Def d : d5)
+                 if (!used5.contains(d.idx)) {
+                     JsRead js = parseJsResource(data, d.off, d.len);
+-                    if (js.raw.length > 0) Files.write(imgDir.resolve(js.name), js.raw);
++                    if (js.raw.length > 0) {
++                        Path base = imgDir.toAbsolutePath().normalize();
++                        Path target = base.resolve(js.name).normalize();
++                        if (!target.startsWith(base)) throw new IOException("Invalid script resource path");
++                        Files.createDirectories(target.getParent());
++                        Files.write(target, js.raw);
++                    }
+                     Map<String, Object> extra = new LinkedHashMap<>();
+                     extra.put("idx", d.idx);
+                     extra.put("name", js.name);
+@@ -2523,7 +2529,13 @@ public class Mi8WfBinTool {
+             e.put("jsFileName", js.name);
+             if (str(e.get("type")).isEmpty())
+                 e.put("type", js.name.toLowerCase(Locale.ROOT).endsWith(".lua") ? "type_element_lua" : "type_element_js");
+-            if (js.raw.length > 0) Files.write(imgDir.resolve(js.name), js.raw);
++            if (js.raw.length > 0) {
++                Path base = imgDir.toAbsolutePath().normalize();
++                Path target = base.resolve(js.name).normalize();
++                if (!target.startsWith(base)) throw new IOException("Invalid script resource path");
++                Files.createDirectories(target.getParent());
++                Files.write(target, js.raw);
++            }
+         }
+ 
+         static JsRead parseJsResource(byte[] data, int p, int len) {
