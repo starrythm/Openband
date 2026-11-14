@@ -51,16 +51,19 @@ for epoch in epochs:
         alt=positions[epoch][name]
         if shadow[8]=='0':
             shadows.append((name,tuple(map(int,shadow[1:5]))))
-        if alt>=1.25:
-            assert label[8]=='0',f'{epoch}: missing {name} at {alt}'
+        assert (shadow[8] == '0') == (alt > 0), f'{epoch}: incorrect marker visibility for {name}'
+        assert label[8] == bg[8], f'{epoch}: label/background mismatch for {name}'
+        # Crowded layouts may hide a label while retaining the body's marker.
+        if label[8] == '0':
+            assert alt >= 1.25, f'{epoch}: unexpected label {name}'
             if alt>=4:
                 assert re.search(r'\(A\d{3} H[+-]\d+',label[10]),label[10]
                 if name=='MOON': assert re.search(r'% M[+-][\d.]+\)$',label[10])
                 else: assert ' M' not in label[10]
             backgrounds.append((name,tuple(map(int,bg[1:5]))))
             assert int(label[2])<405 and int(label[1])>=2
-        else:
-            assert label[8]=='1',f'{epoch}: unexpected label {name}'
+    if any(alt >= 1.25 for alt in positions[epoch].values()):
+        assert backgrounds, f'{epoch}: all eligible labels were hidden'
     for i,(name,a) in enumerate(backgrounds):
         for other,b in backgrounds[i+1:]:
             assert not overlap(a,b),f'{epoch}: {name} collides with {other}'
