@@ -32,7 +32,7 @@ def rfcomm_channel(data):
             if 1<=channel<=30:return channel
     raise ProtocolError('SPP service has no valid RFCOMM channel')
 
-async def system_pair(address,log):
+async def system_pair(address,log,*,allow_new_pairing=True):
     from winrt.windows.devices.bluetooth import BluetoothDevice
     from winrt.windows.devices.enumeration import DevicePairingKinds
     from bleak.backends.winrt.client import FutureLike
@@ -42,6 +42,8 @@ async def system_pair(address,log):
         pairing=device.device_information.pairing
         if pairing.is_paired:
             log(stage='windows_bond_present');return
+        if not allow_new_pairing:
+            raise ProtocolError('The selected device has no existing Windows Bluetooth pairing')
         custom=pairing.custom
         def requested(sender,args):
             if args.pairing_kind==DevicePairingKinds.CONFIRM_ONLY:
@@ -62,13 +64,17 @@ async def system_pair(address,log):
     finally:device.close()
 
 class RfcommStream:
-    def __init__(self,address,log):self.address=address;self.log=log;self.socket=None
+    def __init__(self,address,log,*,allow_new_pairing=True):
+        self.address=address
+        self.log=log
+        self.socket=None
+        self.allow_new_pairing=allow_new_pairing
 
     async def connect(self):
         from winrt.windows.devices.bluetooth import BluetoothDevice,BluetoothCacheMode
         from winrt.windows.storage.streams import DataReader
         from bleak.backends.winrt.client import FutureLike
-        await system_pair(self.address,self.log)
+        await system_pair(self.address,self.log,allow_new_pairing=self.allow_new_pairing)
         device=await asyncio.wait_for(FutureLike(BluetoothDevice.from_bluetooth_address_async(int(self.address.replace(':',''),16))),10)
         if not device:raise ProtocolError('Selected Bluetooth device unavailable after pairing')
         try:

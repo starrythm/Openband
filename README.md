@@ -36,6 +36,21 @@ python client/watchfaces.py --address $bandAddress list
 
 列表中的 `current: true` 表示当前表盘。已安装同 ID 时可以运行 `python client/watchfaces.py --address $bandAddress select 826104732`。设备需要有可用表盘槽位。安装入口只处理新增。仓库中的包由实机验证过的星图逻辑重新构建，发布构建已做 Lua 字节往返与模拟验证。
 
+## 读取和上传健康数据
+
+在已有 Windows 蓝牙配对和 Openband 认证资料的情况下，可以读取手环保留的健康记录，导出原始文件、解码后的 JSON 和 Excel 可打开的 CSV。也可以手动将一次导出的 ZIP 发到自己的 HTTPS 接收端。
+
+```powershell
+python client/health.py capture --address $bandAddress
+$snapshot = Read-Host '本次导出目录'
+$receiver = Read-Host '你自己的 HTTPS 接收地址'
+python client/health.py upload $snapshot --url $receiver
+```
+
+已实测读到心率、压力、深睡、浅睡、清醒、步数和活动汇总。其他字段是否有记录取决于设备实际返回的数据。[健康数据使用说明](docs/health.md)
+
+![心率、压力、睡眠和步数趋势示例，全部使用模拟数据](docs/images/health-example.png)
+
 ## 自定义和重建
 
 示例使用 [watchface/observer.example.json](watchface/observer.example.json) 中的零度经纬度。修改 [watchface/build.py](watchface/build.py) 中的 `ID` 可为自定义版本分配新的数字 ID，最多 9 位。保持手环时间和时区准确。
