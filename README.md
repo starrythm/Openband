@@ -36,7 +36,9 @@ python client/watchfaces.py --address $bandAddress list
 
 列表中的 `current: true` 表示当前表盘。已安装同 ID 时可以运行 `python client/watchfaces.py --address $bandAddress select 826104732`。设备需要有可用表盘槽位。安装入口只处理新增。仓库中的包由实机验证过的星图逻辑重新构建，发布构建已做 Lua 字节往返与模拟验证。
 
-## 读取和上传健康数据
+## 补充功能
+
+### 读取和上传健康数据
 
 在已有 Windows 蓝牙配对和 Openband 认证资料的情况下，可以读取手环保留的健康记录，导出原始文件、解码后的 JSON 和 Excel 可打开的 CSV。也可以手动将一次导出的 ZIP 发到自己的 HTTPS 接收端。
 
@@ -50,6 +52,22 @@ python client/health.py upload $snapshot --url $receiver
 已实测读到心率、压力、深睡、浅睡、清醒、步数和活动汇总。其他字段是否有记录取决于设备实际返回的数据。[健康数据使用说明](docs/health.md)
 
 ![心率、压力、睡眠和步数趋势示例，全部使用模拟数据](docs/images/health-example.png)
+
+### 手环视频
+
+《灯与翅膀》是一部完整的 30 秒原创动画。手环版以小米手环 10 NFC 的原生 212×520 像素、30 帧/秒编码。播放器按需读取本地 MJPEG 分段，播放时铺满胶囊屏，片尾显示实测帧率及掉帧数。
+
+[观看带配乐的完整视频](apps/lampwings/lampwings.mp4) · [播放原理与实现步骤](docs/band-video.md) · [动画与播放器源码](apps/lampwings)
+
+![《灯与翅膀》分镜](docs/images/lampwings-storyboard.png)
+
+### Codex 手环额度
+
+电脑连接器从本机 Codex app-server 读取额度，通过已认证的蓝牙连接发给手环。全屏界面用两个绿环显示五小时及每周剩余百分比和重置时间，底部是账号额度余额。打开时自动同步，点屏幕可刷新。
+
+[数据链路与实现步骤](docs/codex-quota.md) · [电脑连接器源码](client/codex_quota.py) · [手环界面源码](apps/codex-quota)
+
+<img src="docs/images/codex-quota.png" alt="Codex 手环额度界面，使用模拟数据" width="212">
 
 ## 自定义和重建
 

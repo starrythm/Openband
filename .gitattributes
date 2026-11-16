@@ -4,3 +4,4 @@
 *.patch text eol=lf whitespace=-blank-at-eol
 *.bin binary
 *.png binary
+*.mp4 binary

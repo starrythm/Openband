@@ -9,3 +9,17 @@ __pycache__/
 *.dpapi.json
 *.dpapi.json.new
 .env
+/apps/*/watch/node_modules/
+/apps/*/watch/build/
+/apps/*/watch/dist/
+/apps/*/.temp_watch/
+/apps/codex-quota/quota-preview.png
+/apps/codex-quota/watch/src/common/quota-rings/
+/apps/lampwings/score.wav
+/apps/lampwings/storyboard.png
+/apps/lampwings/lampwings-watch.avi
+/apps/lampwings/encoding-report.json
+/apps/lampwings/watch/src/common/media/
+/apps/lampwings/watch/src/common/icon.png
+/apps/lampwings/watch/src/common/poster.jpg
+/apps/lampwings/watch/src/common/resource-size.js

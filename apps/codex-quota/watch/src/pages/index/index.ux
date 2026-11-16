@@ -1,0 +1,182 @@
+<template>
+  <div class="page" onclick="refresh">
+    <text class="headline">Codex 额度</text>
+    <stack class="ring">
+      <image class="ring-art" src="{{fiveRing}}"></image>
+      <div class="ring-copy">
+        <text class="ring-label">五小时</text>
+        <text class="ring-value">{{fiveValue}}</text>
+      </div>
+    </stack>
+    <text class="reset">{{fiveReset}}</text>
+    <stack class="ring week-ring">
+      <image class="ring-art" src="{{weekRing}}"></image>
+      <div class="ring-copy">
+        <text class="ring-label">每周</text>
+        <text class="ring-value">{{weekValue}}</text>
+      </div>
+    </stack>
+    <text class="reset">{{weekReset}}</text>
+    <div class="rule"></div>
+    <text class="credits-label">额度</text>
+    <text class="credits-value">{{balance}}</text>
+    <text if="{{status}}" class="status">{{status}}</text>
+  </div>
+</template>
+
+<script>
+import interconnect from '@system.interconnect'
+
+const EMPTY_RING = '/common/quota-rings/0.png'
+
+function windowDisplay(windows, minutes) {
+  const window = windows.find(item => item && item.minutes === minutes)
+  if (!window || typeof window.remaining !== 'number' || !isFinite(window.remaining)) {
+    return { value: '—', ring: EMPTY_RING, reset: '重置 —' }
+  }
+  const percent = Math.min(100, Math.max(0, Math.round(window.remaining)))
+  return {
+    value: percent + '%',
+    ring: '/common/quota-rings/' + percent + '.png',
+    reset: window.reset ? '重置 ' + window.reset : '重置 —'
+  }
+}
+
+function balanceDisplay(credits) {
+  if (!credits) return '—'
+  if (credits.unlimited === true) return '不限额'
+  const raw = credits.balance
+  if (typeof raw !== 'string' && typeof raw !== 'number') return '—'
+  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(raw).trim())
+  if (!parts) return '—'
+  const integer = parts[2].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  const fraction = (parts[3] || '').replace(/0+$/, '')
+  return parts[1] + integer + (fraction ? '.' + fraction : '')
+}
+
+export default {
+  data: {
+    fiveRing: EMPTY_RING, fiveValue: '—', fiveReset: '重置 —',
+    weekRing: EMPTY_RING, weekValue: '—', weekReset: '重置 —',
+    balance: '—', status: '等待电脑连接'
+  },
+  onInit() {
+    this._active = true
+    this._pending = false
+    this._stateRevision = 0
+  },
+  onReady() {
+    this.connection = interconnect.instance()
+    this.connection.onopen = () => this.connectionChanged(true)
+    this.connection.onclose = () => this.connectionChanged(false)
+    this.connection.onerror = () => this.connectionChanged(false)
+    this.connection.onmessage = event => this.receive(event.data)
+    if (this._active) this.checkConnection()
+  },
+  onShow() {
+    this._active = true
+    if (this.connection) this.checkConnection()
+  },
+  onHide() { this._active = false },
+  onDestroy() {
+    this._active = false
+    this.finishRequest()
+    if (this.connection) {
+      this.connection.onopen = null
+      this.connection.onclose = null
+      this.connection.onerror = null
+      this.connection.onmessage = null
+      this.connection = null
+    }
+  },
+  checkConnection() {
+    if (!this.connection) return
+    const revision = ++this._stateRevision
+    this.connection.getReadyState({
+      success: state => {
+        if (this.connection && revision === this._stateRevision) this.connectionChanged(state.status === 1)
+      },
+      fail: () => {
+        if (this.connection && revision === this._stateRevision) this.connectionChanged(false)
+      }
+    })
+  },
+  connectionChanged(connected) {
+    this._stateRevision++
+    this._connected = connected
+    if (connected) {
+      if (this._active) this.readQuota()
+    } else {
+      this.finishRequest()
+      this.status = '等待电脑连接'
+    }
+  },
+  refresh() {
+    if (this._connected) this.readQuota()
+    else this.checkConnection()
+  },
+  readQuota() {
+    if (!this.connection || !this._active || this._pending) return
+    this._pending = true
+    this.status = '正在读取'
+    this._timeout = setTimeout(() => {
+      this.finishRequest()
+      this.status = '读取超时'
+    }, 25000)
+    this.connection.send({data: {op: 'quota'}, fail: () => {
+      this.finishRequest()
+      this.status = '读取失败'
+    }})
+  },
+  finishRequest() {
+    if (this._timeout) clearTimeout(this._timeout)
+    this._timeout = null
+    this._pending = false
+  },
+  receive(raw) {
+    let data
+    try {
+      data = typeof raw === 'string' ? JSON.parse(raw) : raw
+    } catch (error) {
+      this.finishRequest()
+      this.status = '读取失败'
+      return
+    }
+    if (!data) return
+    if (data.op === 'error') {
+      this.finishRequest()
+      this.status = '读取失败'
+      return
+    }
+    if (data.op !== 'quota') return
+    const windows = Array.isArray(data.windows) ? data.windows : []
+    const five = windowDisplay(windows, 300)
+    const week = windowDisplay(windows, 10080)
+    this.fiveRing = five.ring
+    this.fiveValue = five.value
+    this.fiveReset = five.reset
+    this.weekRing = week.ring
+    this.weekValue = week.value
+    this.weekReset = week.reset
+    this.balance = balanceDisplay(data.credits)
+    this.finishRequest()
+    this.status = ''
+  }
+}
+</script>
+
+<style>
+.page { width: 212px; height: 520px; padding-top: 29px; background-color: #000000; align-items: center; flex-direction: column; }
+.headline { width: 164px; height: 31px; line-height: 31px; color: #dcf6e7; font-size: 22px; font-weight: bold; text-align: center; }
+.ring { width: 120px; height: 120px; margin-top: 6px; }
+.week-ring { margin-top: 13px; }
+.ring-art { width: 120px; height: 120px; }
+.ring-copy { width: 120px; height: 120px; flex-direction: column; align-items: center; justify-content: center; }
+.ring-label { width: 104px; height: 23px; line-height: 23px; color: #a4ceb4; font-size: 17px; font-weight: bold; text-align: center; }
+.ring-value { width: 104px; height: 45px; line-height: 45px; color: #effff5; font-size: 34px; font-weight: bold; text-align: center; }
+.reset { width: 172px; height: 22px; line-height: 22px; margin-top: 4px; color: #aac9b6; font-size: 17px; text-align: center; }
+.rule { width: 112px; height: 1px; margin-top: 16px; background-color: #2a4937; }
+.credits-label { width: 160px; height: 23px; line-height: 23px; margin-top: 13px; color: #9ec1ab; font-size: 18px; text-align: center; }
+.credits-value { width: 176px; height: 44px; line-height: 44px; color: #79ffae; font-size: 35px; font-weight: bold; text-align: center; }
+.status { width: 156px; height: 18px; line-height: 18px; margin-top: 5px; color: #a4ceb4; font-size: 15px; text-align: center; }
+</style>

@@ -1,0 +1,32 @@
+{
+  "package": "com.codex.bandviewer",
+  "name": "Codex",
+  "versionName": "0.6.0",
+  "versionCode": 8,
+  "minPlatformVersion": 1100,
+  "icon": "/common/icon.png",
+  "deviceTypeList": [
+    "watch"
+  ],
+  "features": [
+    {
+      "name": "system.interconnect"
+    }
+  ],
+  "config": {
+    "logLevel": "error",
+    "designWidth": 212
+  },
+  "router": {
+    "entry": "pages/index",
+    "pages": {
+      "pages/index": {
+        "component": "index",
+        "launchMode": "singleTask"
+      }
+    }
+  },
+  "display": {
+    "backgroundColor": "#000000"
+  }
+}

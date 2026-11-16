@@ -1,0 +1,377 @@
+<template>
+  <stack class="page">
+    <image class="frame" if="{{source}}" src="{{source}}" onclick="toggle" oncomplete="frameLoaded" onerror="frameFailed"></image>
+    <image class="frame" else src="/common/poster.jpg" onclick="toggle"></image>
+    <div class="controls" if="{{controlsVisible}}">
+      <text class="title">灯与翅膀</text>
+      <text class="progress">{{progress}}</text>
+      <text class="status" if="{{status}}">{{status}}</text>
+      <text class="detail" if="{{detail}}">{{detail}}</text>
+      <div class="play" onclick="toggle"><text class="play-label">{{playLabel}}</text></div>
+      <div class="seek">
+        <div class="skip" onclick="back"><text class="skip-label">−2 秒</text></div>
+        <div class="skip" onclick="forward"><text class="skip-label">+2 秒</text></div>
+      </div>
+    </div>
+  </stack>
+</template>
+
+<script>
+import file from '@system.file'
+import brightness from '@system.brightness'
+import {readClip} from '../../common/clip-reader.js'
+import {checkFrame, openAvi} from '../../common/avi.js'
+
+const cache = 'internal://cache/lampwings-'
+
+function writeFile(uri, buffer) {
+  return new Promise((resolve, reject) => {
+    file.writeArrayBuffer({
+      uri, buffer,
+      success: resolve,
+      fail(data, code) {
+        const error = new Error('缓存写入 ' + code)
+        error.code = code
+        reject(error)
+      }
+    })
+  })
+}
+
+function remove(uri) {
+  if (uri) file.delete({uri})
+}
+
+function keepScreenOn(active) {
+  try {
+    brightness.setKeepScreenOn({keepScreenOn: active, fail() {}})
+  } catch (error) {
+    // The local player can still run on devices without this optional feature.
+  }
+}
+
+function clock(seconds) {
+  return Math.floor(seconds / 60) + ':' + ('0' + Math.floor(seconds % 60)).slice(-2)
+}
+
+export default {
+  data: {
+    source: '',
+    progress: '0:00',
+    status: '正在读取视频',
+    playLabel: '播放',
+    controlsVisible: true,
+    detail: ''
+  },
+
+  onInit() {
+    this.session = Date.now()
+    this.serial = 0
+    this.epoch = 0
+    this.visible = true
+    this.frame = -1
+    this.rawBuffer = false
+    const timeout = setTimeout(() => {
+      if (!this.closed && !this.video) this.status = '读取视频超时'
+    }, 4000)
+    openAvi(readClip).then(video => {
+      clearTimeout(timeout)
+      if (this.closed) return
+      this.video = video
+      this.status = '高清 · 30 帧/秒'
+      this.updateProgress()
+
+    }).catch(error => {
+      clearTimeout(timeout)
+      if (this.closed) return
+      this.status = '无法打开视频'
+      this.detail = error.message
+    })
+  },
+
+  onShow() { this.visible = true },
+
+  onHide() {
+    this.visible = false
+    if (this.playing || this.still !== undefined) this.pause('已暂停')
+  },
+
+  onDestroy() {
+    this.closed = true
+    this.invalidate()
+    clearTimeout(this.deadline)
+    remove(this.current)
+    if (this.pending) remove(this.pending.uri)
+    if (this.writing) remove(this.writing.uri)
+  },
+
+  invalidate() {
+    this.epoch++
+    if (this.playing) keepScreenOn(false)
+    this.playing = false
+    this.still = undefined
+    clearTimeout(this.timer)
+    if (this.ready) remove(this.ready.uri)
+    this.ready = null
+  },
+
+  async save(uri, bytes) {
+    if (this.rawBuffer) return writeFile(uri, bytes.buffer)
+    try {
+      await writeFile(uri, bytes)
+    } catch (error) {
+      if (error.code !== 202) throw error
+      await writeFile(uri, bytes.buffer)
+      this.rawBuffer = true
+    }
+  },
+
+  updateProgress(ended) {
+    const duration = Math.round(this.video.frames.length * this.video.interval / 1000)
+    const position = ended ? duration : Math.max(0, this.frame) * this.video.interval / 1000
+    this.progress = clock(position) + '  /  ' + clock(duration)
+  },
+
+  toggle() {
+    if (!this.video) return
+    if (this.playing) {
+      this.pause('已暂停')
+      return
+    }
+    if (this.pending) return
+    this.invalidate()
+    const last = this.video.frames.length - 1
+    this.first = this.frame < 0 || this.frame >= last ? 0 : this.frame + 1
+    this.measure = {start: null, shown: 0, prepare: 0, present: 0}
+    this.playing = true
+    keepScreenOn(true)
+    this.controlsVisible = false
+    this.detail = ''
+    this.status = '播放中'
+    this.playLabel = '暂停'
+    this.feed()
+  },
+
+  pause(status) {
+    this.invalidate()
+    this.controlsVisible = true
+    this.playLabel = '播放'
+    this.status = status
+  },
+
+  back() { this.seek(-2) },
+  forward() { this.seek(2) },
+
+  seek(seconds) {
+    if (!this.video || this.pending || this.playing) return
+    this.invalidate()
+    this.detail = ''
+    this.status = '已暂停'
+    this.playLabel = '播放'
+    const target = Math.max(0, this.frame) + Math.round(seconds * 1000 / this.video.interval)
+    this.still = Math.min(this.video.frames.length - 1, Math.max(0, target))
+    this.feed()
+  },
+
+  prepare(index) {
+    if (this.writing || this.ready || index >= this.video.frames.length) return
+    const frame = this.video.frames[index]
+    const uri = cache + this.session + '-' + (++this.serial) + '.jpg'
+    const job = {index, uri, epoch: this.epoch, start: Date.now()}
+    this.writing = job
+    const timeout = setTimeout(() => {
+      if (this.writing === job && this.epoch === job.epoch && !this.closed) {
+        this.pause('缓存写入超时')
+      }
+    }, 4000)
+    readClip(frame.offset, frame.length).then(checkFrame)
+      .then(bytes => {
+        if (this.closed || this.epoch !== job.epoch) return false
+        return this.save(uri, bytes).then(() => true)
+      }).then(written => {
+        this.writing = null
+        clearTimeout(timeout)
+        if (written && !this.closed && this.epoch === job.epoch) {
+          job.prepareMs = Date.now() - job.start
+          this.ready = job
+        } else if (written) {
+          remove(uri)
+        }
+        this.feed()
+      }).catch(error => {
+        this.writing = null
+        clearTimeout(timeout)
+        remove(uri)
+        if (this.closed) return
+        if (this.epoch === job.epoch) {
+          this.detail = error.message
+          this.pause('视频帧处理失败')
+        } else {
+          this.feed()
+        }
+      })
+  },
+
+  present() {
+    const job = this.ready
+    this.ready = null
+    job.presentStart = Date.now()
+    this.pending = job
+    this.deadline = setTimeout(() => this.failFrame('画面加载超时'), 1800)
+    this.source = job.uri
+  },
+
+  feed() {
+    if (this.closed || !this.visible || !this.video || (!this.playing && this.still === undefined)) return
+    clearTimeout(this.timer)
+    if (!this.playing) {
+      if (!this.pending && this.ready) this.present()
+      else if (!this.pending) this.prepare(this.still)
+      return
+    }
+
+    const now = Date.now()
+    const interval = this.video.interval
+    const last = this.video.frames.length - 1
+    const start = this.measure.start
+    const due = start === null ? this.first : this.first + Math.floor((now - start) / interval + 0.01)
+    if (this.pending) {
+      this.prepare(Math.max(this.pending.index + 1, Math.min(last, due)))
+      return
+    }
+    if (this.frame === last && start !== null) {
+      const remaining = start + (last - this.first + 1) * interval - now
+      if (remaining > 0) this.timer = setTimeout(() => this.feed(), Math.ceil(remaining))
+      else this.finish(now)
+      return
+    }
+    if (this.ready) {
+      const wait = start === null ? 0 : start + (this.ready.index - this.first) * interval - now
+      if (wait > 1) this.timer = setTimeout(() => this.feed(), Math.ceil(wait))
+      else {
+        this.present()
+        this.prepare(Math.max(this.pending.index + 1, Math.min(last, due)))
+      }
+      return
+    }
+    const next = start === null ? this.first : Math.min(last, Math.max(this.frame + 1, due))
+    this.prepare(next)
+  },
+
+  frameLoaded() {
+    const job = this.pending
+    if (!job || this.source !== job.uri) return
+    clearTimeout(this.deadline)
+    const previous = this.current
+    this.current = job.uri
+    this.frame = job.index
+    this.pending = null
+    remove(previous)
+    if (job.epoch !== this.epoch) {
+      this.updateProgress()
+      this.feed()
+      return
+    }
+    if (this.playing) {
+      const now = Date.now()
+      if (this.measure.start === null) this.measure.start = now
+      this.measure.shown++
+      this.measure.prepare += job.prepareMs
+      this.measure.present += now - job.presentStart
+    } else {
+      this.still = undefined
+      this.updateProgress()
+    }
+    this.feed()
+  },
+
+  finish(now) {
+    const stats = this.measure
+    const total = this.video.frames.length - this.first
+    const dropped = total - stats.shown
+    const rate = stats.shown * 1000 / Math.max(this.video.interval, now - stats.start)
+    const loadMs = Math.round(stats.present / stats.shown)
+    const prepareMs = Math.round(stats.prepare / stats.shown)
+    const target = Math.round(1000 / this.video.interval)
+    this.pause(rate.toFixed(1) + ' / ' + target + ' 帧/秒')
+    this.detail = '掉 ' + dropped + ' 帧 · 写 ' + prepareMs + ' / 显 ' + loadMs + ' ms'
+    this.updateProgress(true)
+    this.playLabel = '重播'
+  },
+
+  frameFailed() { this.failFrame('画面解码失败') },
+
+  failFrame(message) {
+    if (!this.pending) return
+    clearTimeout(this.deadline)
+    const uri = this.pending.uri
+    this.pending = null
+    this.source = this.current || ''
+    remove(uri)
+    this.updateProgress()
+    this.pause(message)
+  }
+}
+</script>
+
+<style>
+.page {
+  width: 212px;
+  height: 520px;
+  background-color: #000000;
+}
+.frame, .touch {
+  width: 212px;
+  height: 520px;
+  left: 0px;
+  top: 0px;
+}
+.frame { object-fit: cover; }
+.controls {
+  width: 172px;
+  left: 20px;
+  top: 128px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  flex-direction: column;
+  align-items: center;
+  background-color: #111920ed;
+  border-radius: 20px;
+}
+.title {
+  width: 148px;
+  color: #ffffff;
+  font-size: 26px;
+  text-align: center;
+}
+.progress, .status, .detail {
+  width: 148px;
+  text-align: center;
+}
+.progress { color: #cedbea; font-size: 18px; margin-top: 7px; }
+.status { color: #a6b9cb; font-size: 16px; margin-top: 4px; }
+.detail { color: #ffb598; font-size: 15px; margin-top: 4px; }
+.play, .skip { align-items: center; justify-content: center; }
+.play {
+  margin-top: 12px;
+  width: 144px;
+  height: 48px;
+  border-radius: 24px;
+  background-color: #ffd39d;
+}
+.play-label { color: #0e2527; font-size: 22px; }
+.seek {
+  margin-top: 8px;
+  width: 144px;
+  height: 39px;
+  flex-direction: row;
+  justify-content: space-between;
+}
+.skip {
+  width: 68px;
+  height: 39px;
+  border-radius: 19px;
+  background-color: #273645;
+}
+.skip-label { color: #ffffff; font-size: 16px; }
+</style>
